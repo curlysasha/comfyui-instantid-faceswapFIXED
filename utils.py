@@ -97,7 +97,9 @@ def get_mask_bbox_with_padding(mask_image, pad_top, pad_right, pad_bottom, pad_l
 def get_kps_from_image(image, insightface):
   np_pose_image = (255.0 * image.cpu().numpy().squeeze()).clip(0, 255).astype(np.uint8)
   face_info = insightface.get(cv2.cvtColor(np_pose_image, cv2.COLOR_RGB2BGR))
-  assert len(face_info) > 0, "No face detected in pose image"
+  if len(face_info) == 0:
+    print("Warning: No face detected in pose image, returning None")
+    return None
   face_info = sorted(face_info, key=lambda x: (x["bbox"][2] - x["bbox"][0]) * (x["bbox"][3] - x["bbox"][1]))[-1] # only use the maximum face
   return face_info["kps"]
 

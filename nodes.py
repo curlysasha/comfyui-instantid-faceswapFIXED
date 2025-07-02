@@ -45,15 +45,20 @@ class FaceEmbed:
     face_image = (255.0 * face_image.cpu().numpy().squeeze()).clip(0, 255).astype(np.uint8)
     face_info = insightface.get(cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
 
-    assert len(face_info) > 0, "No face detected for face embed"
-
-    face_info = sorted(face_info, key=lambda x: (x["bbox"][2] - x["bbox"][0]) * (x["bbox"][3] - x["bbox"][1]))[-1] # only use the maximum face
-    face_emb = torch.tensor(face_info["embedding"], dtype=torch.float32).unsqueeze(0)
+    if len(face_info) == 0:
+      print("Warning: No face detected for face embed, using empty embedding")
+      # Return empty tensor with correct shape to signal no face detected
+      face_emb = torch.empty(0, 512, dtype=torch.float32)
+    else:
+      face_info = sorted(face_info, key=lambda x: (x["bbox"][2] - x["bbox"][0]) * (x["bbox"][3] - x["bbox"][1]))[-1] # only use the maximum face
+      face_emb = torch.tensor(face_info["embedding"], dtype=torch.float32).unsqueeze(0)
 
     if face_embeds is None:
       return (face_emb,)
 
-    face_embeds = torch.cat((face_embeds, face_emb), dim=-2)
+    # Only concatenate if we have a valid embedding
+    if face_emb.numel() > 0:
+      face_embeds = torch.cat((face_embeds, face_emb), dim=-2)
     return (face_embeds,)
 
 
@@ -77,6 +82,14 @@ class FaceEmbedCombine:
   CATEGORY = CATEGORY_NAME
 
   def combine_face_embed(self, resampler, face_embeds):
+    # Check if we have empty embeddings (no faces detected)
+    if face_embeds.numel() == 0:
+      print("Warning: No face embeddings to combine, using zero conditioning")
+      # Return zero conditioning tensor with correct shape for resampler output
+      device = comfy.model_management.get_torch_device()
+      conditionings = torch.zeros(1, 16, 2048, dtype=torch.float32, device=device)
+      return (conditionings,)
+    
     embeds = torch.mean(face_embeds, dim=0, dtype=torch.float32).unsqueeze(0)
     embeds = embeds.reshape([1, -1, 512])
     conditionings = resampler(embeds).to(comfy.model_management.get_torch_device())
@@ -119,11 +132,13 @@ class AngleFromFace:
     kps = get_kps_from_image(image, insightface)
 
     angle = 0.
-    if rotate_mode != "none" :
+    if rotate_mode != "none" and kps is not None:
       angle = get_angle(
         kps[0], kps[1],
         round_angle = True if rotate_mode == "loseless" else False
       )
+    elif kps is None:
+      print("Warning: Cannot calculate angle - no face detected")
     return (angle,)
 
 
@@ -280,6 +295,11 @@ class ControlNetInstantIdApply:
     if strength == 0:
         return (positive, negative)
 
+    # Check if we have valid face conditioning (non-zero tensor)
+    has_face_conditioning = face_conditioning.sum().item() != 0
+    if not has_face_conditioning:
+      print("Warning: No face conditioning available, applying ControlNet without face features")
+
     control_hint = image.movedim(-1,1)
     cnets = {}
 
@@ -297,10 +317,14 @@ class ControlNetInstantIdApply:
           c_net.set_previous_controlnet(prev_cnet)
           cnets[prev_cnet] = c_net
 
-        if isPositive:
-          d["cross_attn_controlnet"] = face_conditioning.to(comfy.model_management.intermediate_device())
-        else :
-          d["cross_attn_controlnet"] = torch.zeros_like(face_conditioning).to(comfy.model_management.intermediate_device())
+        # Only apply face conditioning if we actually have valid face data
+        if has_face_conditioning:
+          if isPositive:
+            d["cross_attn_controlnet"] = face_conditioning.to(comfy.model_management.intermediate_device())
+          else :
+            d["cross_attn_controlnet"] = torch.zeros_like(face_conditioning).to(comfy.model_management.intermediate_device())
+        # If no face conditioning, don't add cross_attn_controlnet at all
+        
         d["control"] = c_net
         d["control_apply_to_uncond"] = False
 
