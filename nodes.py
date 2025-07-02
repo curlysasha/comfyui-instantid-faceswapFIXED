@@ -244,6 +244,12 @@ class InstantIdAdapterApply:
   def apply_instantId_adapter(self, model, instantId_adapter, face_conditioning, strength):
     if strength == 0: return (model,)
 
+    # Check if we have valid face conditioning (non-zero tensor)
+    has_face_conditioning = face_conditioning.sum().item() != 0
+    if not has_face_conditioning:
+      print("Warning: No face detected, skipping InstantID adapter")
+      return (model,)  # Return original model unchanged
+
     instantId = instantId_adapter.to(comfy.model_management.get_torch_device())
     patch_kwargs = {
       "instantId": instantId,
@@ -298,7 +304,8 @@ class ControlNetInstantIdApply:
     # Check if we have valid face conditioning (non-zero tensor)
     has_face_conditioning = face_conditioning.sum().item() != 0
     if not has_face_conditioning:
-      print("Warning: No face conditioning available, applying ControlNet without face features")
+      print("Warning: No face detected, skipping InstantID ControlNet entirely")
+      return (positive, negative)  # Return original conditioning unchanged
 
     control_hint = image.movedim(-1,1)
     cnets = {}
@@ -317,13 +324,10 @@ class ControlNetInstantIdApply:
           c_net.set_previous_controlnet(prev_cnet)
           cnets[prev_cnet] = c_net
 
-        # Only apply face conditioning if we actually have valid face data
-        if has_face_conditioning:
-          if isPositive:
-            d["cross_attn_controlnet"] = face_conditioning.to(comfy.model_management.intermediate_device())
-          else :
-            d["cross_attn_controlnet"] = torch.zeros_like(face_conditioning).to(comfy.model_management.intermediate_device())
-        # If no face conditioning, don't add cross_attn_controlnet at all
+        if isPositive:
+          d["cross_attn_controlnet"] = face_conditioning.to(comfy.model_management.intermediate_device())
+        else :
+          d["cross_attn_controlnet"] = torch.zeros_like(face_conditioning).to(comfy.model_management.intermediate_device())
         
         d["control"] = c_net
         d["control_apply_to_uncond"] = False
