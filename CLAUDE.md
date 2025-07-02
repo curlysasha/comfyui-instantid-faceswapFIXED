@@ -109,9 +109,29 @@ The `workflows/` directory contains JSON workflow examples:
 3. **Memory issues**: Use FP16 mode or enable manual offload
 4. **Extreme rotation**: Use manual keypoint placement instead of auto-detection
 
+## Recent Fixes (2025-07-02)
+
+### Face Detection Error Handling
+Fixed critical issues where missing faces would crash ComfyUI workflows:
+
+**Problem**: Assert errors (`"No face detected for face embed"`) would terminate entire workflows
+
+**Solution**: Graceful degradation with full skip of InstantID processing
+- `FaceEmbed` → Returns empty tensor instead of crashing
+- `FaceEmbedCombine` → Handles empty embeddings with zero conditioning  
+- `InstantIdAdapterApply` → Skips adapter when no face detected
+- `ControlNetInstantIdApply` → Skips ControlNet when no face detected
+- `AngleFromFace` → Returns 0° angle when no face found
+- `get_kps_from_image` → Returns None instead of assert error
+
+**Result**: When no face is detected, workflow continues and generates normal images without face swap attempts.
+
+**Files Modified**: `nodes.py` (lines 48-62, 84-96, 244-259, 292-332, 130-142), `utils.py` (lines 97-104)
+
 ## Extension Integration
 
 The codebase follows ComfyUI's extension patterns:
 - `__init__.py` exports node mappings for ComfyUI registration
 - `WEB_DIRECTORY` points to UI assets
 - Custom data types (FACE_EMBED, INSIGHTFACE_APP, etc.) for node chaining
+- Manual model download required (no auto-download of antelopev2.zip)
