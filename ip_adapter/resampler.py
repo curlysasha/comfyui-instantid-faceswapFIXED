@@ -126,16 +126,16 @@ class Resampler(nn.Module):
 
     for i, (attn, ff) in enumerate(self.layers):
         latents = attn(x, latents) + latents
-        # Clamp to prevent overflow accumulation
-        latents = torch.clamp(latents, min=-65504, max=65504)
+        # Clamp to prevent overflow accumulation (reasonable range for embeddings)
+        latents = torch.clamp(latents, min=-100, max=100)
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after attention layer {i}!")
           return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
         latents = ff(latents) + latents
-        # Clamp to prevent overflow accumulation
-        latents = torch.clamp(latents, min=-65504, max=65504)
+        # Clamp to prevent overflow accumulation (reasonable range for embeddings)
+        latents = torch.clamp(latents, min=-100, max=100)
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after feedforward layer {i}!")
