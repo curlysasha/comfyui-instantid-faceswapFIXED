@@ -142,9 +142,11 @@ class Resampler(nn.Module):
           return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
     latents = self.proj_out(latents)
+    latents = torch.clamp(latents, min=-100, max=100)  # Critical: prevent overflow before final norm
     print(f"[Resampler] After proj_out: has_nan={torch.isnan(latents).any()}, min={latents.min():.4f}, max={latents.max():.4f}")
 
     output = self.norm_out(latents)
+    output = torch.clamp(output, min=-100, max=100)  # Final safety clamp
 
     # Check for NaN/Inf before clamping
     has_nan = torch.isnan(output).any()
