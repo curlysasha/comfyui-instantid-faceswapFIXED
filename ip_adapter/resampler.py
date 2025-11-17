@@ -105,6 +105,7 @@ class Resampler(nn.Module):
       )
 
   def forward(self, x):
+    print(f"[Resampler Debug] Input dtype: {x.dtype}, shape: {x.shape}")
 
     latents = self.latents.repeat(x.size(0), 1, 1)
 
@@ -115,4 +116,20 @@ class Resampler(nn.Module):
         latents = ff(latents) + latents
 
     latents = self.proj_out(latents)
-    return self.norm_out(latents)
+    output = self.norm_out(latents)
+
+    # Check for NaN/Inf before clamping
+    has_nan = torch.isnan(output).any()
+    has_inf = torch.isinf(output).any()
+    if has_nan or has_inf:
+      print(f"[Resampler WARNING] Pre-clamp NaN: {has_nan}, Inf: {has_inf}")
+      print(f"  Output stats: min={output.min():.4f}, max={output.max():.4f}, mean={output.mean():.4f}")
+
+    # Clamp output to prevent NaN/Inf propagation
+    output = torch.clamp(output, min=-65504, max=65504)
+
+    # Final check
+    if torch.isnan(output).any() or torch.isinf(output).any():
+      print(f"[Resampler ERROR] NaN/Inf still present after clamping!")
+
+    return output

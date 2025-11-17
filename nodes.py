@@ -89,10 +89,18 @@ class FaceEmbedCombine:
       device = comfy.model_management.get_torch_device()
       conditionings = torch.zeros(1, 16, 2048, dtype=torch.float32, device=device)
       return (conditionings,)
-    
+
+    print(f"[FaceEmbedCombine Debug] Input embeds dtype: {face_embeds.dtype}, shape: {face_embeds.shape}")
     embeds = torch.mean(face_embeds, dim=0, dtype=torch.float32).unsqueeze(0)
     embeds = embeds.reshape([1, -1, 512])
+
     conditionings = resampler(embeds).to(comfy.model_management.get_torch_device())
+
+    # Check resampler output
+    if torch.isnan(conditionings).any() or torch.isinf(conditionings).any():
+      print(f"[FaceEmbedCombine ERROR] NaN/Inf detected in conditionings!")
+      print(f"  Stats: min={conditionings.min():.4f}, max={conditionings.max():.4f}")
+
     return (conditionings,)
 
 
@@ -249,6 +257,9 @@ class InstantIdAdapterApply:
     if not has_face_conditioning:
       print("Warning: No face detected, skipping InstantID adapter")
       return (model,)  # Return original model unchanged
+
+    print(f"[InstantIdAdapterApply Debug] Conditioning dtype: {face_conditioning.dtype}, shape: {face_conditioning.shape}")
+    print(f"  Strength: {strength}, has NaN: {torch.isnan(face_conditioning).any()}, has Inf: {torch.isinf(face_conditioning).any()}")
 
     instantId = instantId_adapter.to(comfy.model_management.get_torch_device())
     patch_kwargs = {

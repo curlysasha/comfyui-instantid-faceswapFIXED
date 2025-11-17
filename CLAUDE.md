@@ -104,14 +104,31 @@ The `workflows/` directory contains JSON workflow examples:
 
 ## Common Issues
 
-1. **No face detected**: Increase mask size or use manual keypoint drawing
-2. **Model loading errors**: Verify model file placement and paths
-3. **Memory issues**: Use FP16 mode or enable manual offload
-4. **Extreme rotation**: Use manual keypoint placement instead of auto-detection
+1. **Black square output**: Fixed in latest version - dtype auto-detection implemented. See [FIX_BLACK_SQUARE.md](FIX_BLACK_SQUARE.md)
+2. **No face detected**: Increase mask size or use manual keypoint drawing
+3. **Model loading errors**: Verify model file placement and paths
+4. **Memory issues**: Use FP16 mode or enable manual offload
+5. **Extreme rotation**: Use manual keypoint placement instead of auto-detection
 
-## Recent Fixes (2025-07-02)
+## Recent Fixes
 
-### Face Detection Error Handling
+### Black Square Output Fix (2025-11-18)
+
+**Problem**: Black square output in newer ComfyUI versions with InstantID nodes
+
+**Root Cause**: Hardcoded `torch.float16` in InstantID code conflicted with new ComfyUI's `torch.bfloat16` VAE, causing NaN/Inf values.
+
+**Solution Applied**:
+- `ip_adapter/instantId.py:32` - Changed from hardcoded `dtype = torch.float16` to auto-detect `dtype = q.dtype`
+- `ip_adapter/resampler.py:121` - Added clamping to prevent NaN/Inf propagation: `torch.clamp(output, min=-65504, max=65504)`
+
+**Additional Solutions**: See [FIX_BLACK_SQUARE.md](FIX_BLACK_SQUARE.md) for alternative fixes if auto-dtype doesn't resolve the issue.
+
+**Files Modified**:
+- [ip_adapter/instantId.py:32](ip_adapter/instantId.py#L32) - Auto-detect dtype from query tensor
+- [ip_adapter/resampler.py:121](ip_adapter/resampler.py#L121) - Clamp output range
+
+### Face Detection Error Handling (2025-07-02)
 Fixed critical issues where missing faces would crash ComfyUI workflows:
 
 **Problem**: Assert errors (`"No face detected for face embed"`) would terminate entire workflows
