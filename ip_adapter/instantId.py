@@ -33,7 +33,7 @@ class CrossAttentionPatch:
     hidden_states = optimized_attention(q, k, v, extra_options["n_heads"])
     for scale, cond, instantId in zip(self.scales, self.conds,  self.instantIds):
       # Clamp conditioning to prevent overflow before applying to model
-      cond = torch.clamp(cond, min=-65504, max=65504)
+      cond = torch.clamp(cond, min=-10, max=10)
       k_cond = instantId.to_kvs[str(self.number*2+1) + "_to_k_ip"](cond).to(dtype=dtype)
       v_cond = instantId.to_kvs[str(self.number*2+1) + "_to_v_ip"](cond).to(dtype=dtype)
       ip_hidden_states = optimized_attention(q, k_cond, v_cond, extra_options["n_heads"])

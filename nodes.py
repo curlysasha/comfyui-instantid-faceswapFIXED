@@ -250,7 +250,7 @@ class InstantIdAdapterApply:
       return (model,)
 
     # Clamp face conditioning to prevent overflow in adapter
-    face_conditioning = torch.clamp(face_conditioning, min=-65504, max=65504)
+    face_conditioning = torch.clamp(face_conditioning, min=-10, max=10)
 
     instantId = instantId_adapter.to(comfy.model_management.get_torch_device())
     patch_kwargs = {
@@ -310,7 +310,7 @@ class ControlNetInstantIdApply:
       return (positive, negative)  # Return original conditioning unchanged
 
     # Clamp face conditioning to prevent overflow in ControlNet
-    face_conditioning = torch.clamp(face_conditioning, min=-65504, max=65504)
+    face_conditioning = torch.clamp(face_conditioning, min=-10, max=10)
 
     control_hint = image.movedim(-1,1)
     cnets = {}
