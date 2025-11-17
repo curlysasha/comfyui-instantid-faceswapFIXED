@@ -216,6 +216,11 @@ class LoadInstantIdAdapter:
       ff_mult=4
     )
     resampler.load_state_dict(model["image_proj"])
+
+    # Convert resampler to float32 for numerical stability
+    resampler = resampler.float()
+    print(f"[LoadInstantIdAdapter] Resampler converted to dtype: {next(resampler.parameters()).dtype}")
+
     return (instantId, resampler)
 
 
@@ -248,9 +253,6 @@ class InstantIdAdapterApply:
     if not has_face_conditioning:
       print("Warning: No face detected, skipping InstantID adapter")
       return (model,)
-
-    # Clamp face conditioning to prevent overflow in adapter
-    face_conditioning = torch.clamp(face_conditioning, min=-10, max=10)
 
     instantId = instantId_adapter.to(comfy.model_management.get_torch_device())
     patch_kwargs = {
@@ -308,9 +310,6 @@ class ControlNetInstantIdApply:
     if not has_face_conditioning:
       print("Warning: No face detected, skipping InstantID ControlNet entirely")
       return (positive, negative)  # Return original conditioning unchanged
-
-    # Clamp face conditioning to prevent overflow in ControlNet
-    face_conditioning = torch.clamp(face_conditioning, min=-10, max=10)
 
     control_hint = image.movedim(-1,1)
     cnets = {}

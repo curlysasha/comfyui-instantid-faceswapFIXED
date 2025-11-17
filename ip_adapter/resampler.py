@@ -121,9 +121,6 @@ class Resampler(nn.Module):
 
     latents = self.proj_out(latents)
     print(f"[Resampler] After proj_out: min={latents.min().item():.2f}, max={latents.max().item():.2f}, mean={latents.mean().item():.2f}")
-    # More aggressive clamp to prevent any overflow
-    latents = torch.clamp(latents, min=-10, max=10)
     output = self.norm_out(latents)
     print(f"[Resampler] After norm_out: min={output.min().item():.2f}, max={output.max().item():.2f}, mean={output.mean().item():.2f}")
-    output = torch.clamp(output, min=-10, max=10)
     return output
