@@ -106,7 +106,7 @@ class Resampler(nn.Module):
 
   def forward(self, x):
 
-    latents = self.latents.repeat(x.size(0), 1, 1)
+    latents = self.latents.to(x.device).repeat(x.size(0), 1, 1)
 
     x = self.proj_in(x)
 
@@ -115,4 +115,7 @@ class Resampler(nn.Module):
         latents = ff(latents) + latents
 
     latents = self.proj_out(latents)
-    return self.norm_out(latents)
+    latents = torch.clamp(latents, min=-65504, max=65504)  # fp16 safe range
+    output = self.norm_out(latents)
+    output = torch.clamp(output, min=-65504, max=65504)  # Prevent overflow after normalization
+    return output
