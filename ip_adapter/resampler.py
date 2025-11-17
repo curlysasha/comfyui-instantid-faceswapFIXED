@@ -4,26 +4,15 @@ import math
 import torch
 import torch.nn as nn
 
-# FFN with float32 computation for stability
-class FeedForwardStable(nn.Module):
-  def __init__(self, dim, mult=4):
-    super().__init__()
-    inner_dim = int(dim * mult)
-    self.net = nn.Sequential(
-      nn.LayerNorm(dim),
-      nn.Linear(dim, inner_dim, bias=False),
-      nn.GELU(),
-      nn.Linear(inner_dim, dim, bias=False),
-    )
-
-  def forward(self, x):
-    input_dtype = x.dtype
-    x = x.float()
-    x = self.net(x)
-    return x.to(input_dtype)
-
+# FFN - returns nn.Sequential for compatibility with weight loading
 def FeedForward(dim, mult=4):
-  return FeedForwardStable(dim, mult)
+  inner_dim = int(dim * mult)
+  return nn.Sequential(
+    nn.LayerNorm(dim),
+    nn.Linear(dim, inner_dim, bias=False),
+    nn.GELU(),
+    nn.Linear(inner_dim, dim, bias=False),
+  )
 
 def reshape_tensor(x, heads):
   bs, length, _ = x.shape
@@ -146,15 +135,25 @@ class Resampler(nn.Module):
       return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
     for i, (attn, ff) in enumerate(self.layers):
-        latents_before = latents
-        latents = attn(x, latents) + latents
+        # Store original dtype
+        original_dtype = latents.dtype
+
+        # Cast to float32 for attention (stability)
+        latents_fp32 = latents.float()
+        x_fp32 = x.float()
+        attn_out = attn(x_fp32, latents_fp32)
+        latents = attn_out + latents_fp32  # Residual connection in fp32
+        latents = latents.to(original_dtype)  # Cast back
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after attention layer {i}!")
-          print(f"  latents_before stats: min={latents_before.min():.4f}, max={latents_before.max():.4f}")
           return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
-        latents = ff(latents) + latents
+        # Cast to float32 for feedforward (stability)
+        latents_fp32 = latents.float()
+        ff_out = ff(latents_fp32)
+        latents = ff_out + latents_fp32  # Residual connection in fp32
+        latents = latents.to(original_dtype)  # Cast back
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after feedforward layer {i}!")
