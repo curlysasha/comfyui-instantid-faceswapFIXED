@@ -105,16 +105,17 @@ class FaceEmbedCombine:
 
     print(f"[FaceEmbedCombine Debug] Input embeds dtype: {face_embeds.dtype}, shape: {face_embeds.shape}")
 
-    # Get target device and move resampler to it
+    # Get target device and dtype from resampler
     device = comfy.model_management.get_torch_device()
     resampler = resampler.to(device)
+    resampler_dtype = next(resampler.parameters()).dtype
 
     embeds = torch.mean(face_embeds, dim=0, dtype=torch.float32).unsqueeze(0)
     embeds = embeds.reshape([1, -1, 512])
 
-    # Move embeds to same device as resampler
-    embeds = embeds.to(device)
-    print(f"[FaceEmbedCombine] Embeds device: {embeds.device}, Resampler device: {next(resampler.parameters()).device}")
+    # Move embeds to same device and dtype as resampler
+    embeds = embeds.to(device=device, dtype=resampler_dtype)
+    print(f"[FaceEmbedCombine] Embeds device: {embeds.device}, dtype: {embeds.dtype}, Resampler dtype: {resampler_dtype}")
 
     conditionings = resampler(embeds)
 
@@ -247,6 +248,10 @@ class LoadInstantIdAdapter:
       ff_mult=4
     )
     resampler.load_state_dict(model["image_proj"])
+
+    # Convert resampler to float16 to match SDXL model dtype
+    resampler = resampler.half()
+
     return (instantId, resampler)
 
 

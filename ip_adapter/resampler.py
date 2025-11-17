@@ -63,16 +63,7 @@ class PerceiverAttention(nn.Module):
 
     # attention
     scale = 1 / math.sqrt(math.sqrt(self.dim_head))
-
-    # Clamp q and k to prevent overflow in matmul
-    q = torch.clamp(q, min=-10, max=10)
-    k = torch.clamp(k, min=-10, max=10)
-
     weight = (q * scale) @ (k * scale).transpose(-2, -1) # More stable with f16 than dividing afterwards
-
-    # Clamp weight before softmax to prevent overflow
-    weight = torch.clamp(weight, min=-50, max=50)
-
     weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
     out = weight @ v
 
@@ -122,9 +113,9 @@ class Resampler(nn.Module):
       print(f"  Input stats: min={x.min():.4f}, max={x.max():.4f}, mean={x.mean():.4f}")
       return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
-    # Move latents to same device as input
+    # Move latents to same device and dtype as input
     latents = self.latents.to(x.device, dtype=x.dtype).repeat(x.size(0), 1, 1)
-    print(f"[Resampler] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, device={latents.device}, dtype={latents.dtype}")
+    print(f"[Resampler] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, device={latents.device}, dtype={latents.dtype}, input dtype={x.dtype}")
 
     x = self.proj_in(x)
     print(f"[Resampler] After proj_in: has_nan={torch.isnan(x).any()}, min={x.min():.4f}, max={x.max():.4f}")
@@ -136,7 +127,6 @@ class Resampler(nn.Module):
     for i, (attn, ff) in enumerate(self.layers):
         latents_before = latents
         latents = attn(x, latents) + latents
-        latents = torch.clamp(latents, min=-10, max=10)  # Prevent overflow accumulation
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after attention layer {i}!")
@@ -144,14 +134,12 @@ class Resampler(nn.Module):
           return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
         latents = ff(latents) + latents
-        latents = torch.clamp(latents, min=-10, max=10)  # Prevent overflow accumulation
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after feedforward layer {i}!")
           return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
     latents = self.proj_out(latents)
-    latents = torch.clamp(latents, min=-100, max=100)  # Final clamp before norm
     print(f"[Resampler] After proj_out: has_nan={torch.isnan(latents).any()}, min={latents.min():.4f}, max={latents.max():.4f}")
 
     output = self.norm_out(latents)
