@@ -249,8 +249,8 @@ class LoadInstantIdAdapter:
     )
     resampler.load_state_dict(model["image_proj"])
 
-    # Convert resampler to float16 to match SDXL model dtype
-    resampler = resampler.half()
+    # Keep resampler in float32 for numerical stability
+    # It was trained in float32 and doesn't work properly in float16
 
     return (instantId, resampler)
 
