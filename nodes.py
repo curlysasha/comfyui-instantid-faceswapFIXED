@@ -51,7 +51,20 @@ class FaceEmbed:
       face_emb = torch.empty(0, 512, dtype=torch.float32)
     else:
       face_info = sorted(face_info, key=lambda x: (x["bbox"][2] - x["bbox"][0]) * (x["bbox"][3] - x["bbox"][1]))[-1] # only use the maximum face
-      face_emb = torch.tensor(face_info["embedding"], dtype=torch.float32).unsqueeze(0)
+
+      # Get embedding from InsightFace
+      raw_embedding = face_info["embedding"]
+      print(f"[FaceEmbed Debug] Raw embedding from InsightFace: dtype={raw_embedding.dtype}, shape={raw_embedding.shape}")
+      print(f"  Stats: min={raw_embedding.min():.4f}, max={raw_embedding.max():.4f}, mean={raw_embedding.mean():.4f}")
+
+      # Check for NaN/Inf in raw embedding
+      if np.isnan(raw_embedding).any() or np.isinf(raw_embedding).any():
+        print(f"[FaceEmbed ERROR] InsightFace returned NaN/Inf embedding!")
+        print(f"  This indicates a problem with InsightFace or onnxruntime")
+        face_emb = torch.empty(0, 512, dtype=torch.float32)
+      else:
+        face_emb = torch.tensor(raw_embedding, dtype=torch.float32).unsqueeze(0)
+        print(f"[FaceEmbed] Converted to torch: min={face_emb.min():.4f}, max={face_emb.max():.4f}")
 
     if face_embeds is None:
       return (face_emb,)
