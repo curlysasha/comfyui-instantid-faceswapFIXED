@@ -4,15 +4,25 @@ import math
 import torch
 import torch.nn as nn
 
-# FFN
-def FeedForward(dim, mult=4):
-  inner_dim = int(dim * mult)
-  return nn.Sequential(
-    nn.LayerNorm(dim),
-    nn.Linear(dim, inner_dim, bias=False),
-    nn.GELU(),
-    nn.Linear(inner_dim, dim, bias=False),
-  )
+# FFN with gradient clipping to prevent overflow
+class FeedForward(nn.Module):
+  def __init__(self, dim, mult=4):
+    super().__init__()
+    inner_dim = int(dim * mult)
+    self.norm = nn.LayerNorm(dim)
+    self.fc1 = nn.Linear(dim, inner_dim, bias=False)
+    self.act = nn.GELU()
+    self.fc2 = nn.Linear(inner_dim, dim, bias=False)
+
+  def forward(self, x):
+    x = self.norm(x)
+    x = torch.clamp(x, min=-10, max=10)  # Prevent overflow
+    x = self.fc1(x)
+    x = torch.clamp(x, min=-10, max=10)  # Prevent overflow
+    x = self.act(x)
+    x = self.fc2(x)
+    x = torch.clamp(x, min=-10, max=10)  # Prevent overflow
+    return x
 
 def reshape_tensor(x, heads):
   bs, length, _ = x.shape
@@ -63,7 +73,16 @@ class PerceiverAttention(nn.Module):
 
     # attention
     scale = 1 / math.sqrt(math.sqrt(self.dim_head))
+
+    # Clamp q and k to prevent overflow in matmul
+    q = torch.clamp(q, min=-10, max=10)
+    k = torch.clamp(k, min=-10, max=10)
+
     weight = (q * scale) @ (k * scale).transpose(-2, -1) # More stable with f16 than dividing afterwards
+
+    # Clamp weight before softmax to prevent overflow
+    weight = torch.clamp(weight, min=-50, max=50)
+
     weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
     out = weight @ v
 
@@ -105,7 +124,7 @@ class Resampler(nn.Module):
       )
 
   def forward(self, x):
-    print(f"[Resampler Debug] Input dtype: {x.dtype}, shape: {x.shape}")
+    print(f"[Resampler Debug] Input dtype: {x.dtype}, shape: {x.shape}, device: {x.device}")
 
     # Check input for NaN/Inf
     if torch.isnan(x).any() or torch.isinf(x).any():
@@ -113,8 +132,9 @@ class Resampler(nn.Module):
       print(f"  Input stats: min={x.min():.4f}, max={x.max():.4f}, mean={x.mean():.4f}")
       return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
-    latents = self.latents.repeat(x.size(0), 1, 1)
-    print(f"[Resampler] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, device={latents.device}")
+    # Move latents to same device as input
+    latents = self.latents.to(x.device, dtype=x.dtype).repeat(x.size(0), 1, 1)
+    print(f"[Resampler] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, device={latents.device}, dtype={latents.dtype}")
 
     x = self.proj_in(x)
     print(f"[Resampler] After proj_in: has_nan={torch.isnan(x).any()}, min={x.min():.4f}, max={x.max():.4f}")
