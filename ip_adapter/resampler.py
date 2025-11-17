@@ -4,25 +4,15 @@ import math
 import torch
 import torch.nn as nn
 
-# FFN with gradient clipping to prevent overflow
-class FeedForward(nn.Module):
-  def __init__(self, dim, mult=4):
-    super().__init__()
-    inner_dim = int(dim * mult)
-    self.norm = nn.LayerNorm(dim)
-    self.fc1 = nn.Linear(dim, inner_dim, bias=False)
-    self.act = nn.GELU()
-    self.fc2 = nn.Linear(inner_dim, dim, bias=False)
-
-  def forward(self, x):
-    x = self.norm(x)
-    x = torch.clamp(x, min=-10, max=10)  # Prevent overflow
-    x = self.fc1(x)
-    x = torch.clamp(x, min=-10, max=10)  # Prevent overflow
-    x = self.act(x)
-    x = self.fc2(x)
-    x = torch.clamp(x, min=-10, max=10)  # Prevent overflow
-    return x
+# FFN
+def FeedForward(dim, mult=4):
+  inner_dim = int(dim * mult)
+  return nn.Sequential(
+    nn.LayerNorm(dim),
+    nn.Linear(dim, inner_dim, bias=False),
+    nn.GELU(),
+    nn.Linear(inner_dim, dim, bias=False),
+  )
 
 def reshape_tensor(x, heads):
   bs, length, _ = x.shape
