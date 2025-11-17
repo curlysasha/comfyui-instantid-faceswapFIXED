@@ -105,14 +105,19 @@ class Resampler(nn.Module):
       )
 
   def forward(self, x):
-
-    latents = self.latents.repeat(x.size(0), 1, 1)
+    # Ensure latents are on same device and dtype as input
+    latents = self.latents.to(x.device, dtype=x.dtype).repeat(x.size(0), 1, 1)
 
     x = self.proj_in(x)
 
     for attn, ff in self.layers:
         latents = attn(x, latents) + latents
+        latents = torch.clamp(latents, min=-1000, max=1000)  # Prevent catastrophic overflow
         latents = ff(latents) + latents
+        latents = torch.clamp(latents, min=-1000, max=1000)  # Prevent catastrophic overflow
 
     latents = self.proj_out(latents)
-    return self.norm_out(latents)
+    latents = torch.clamp(latents, min=-1000, max=1000)  # Critical clamp before norm
+    output = self.norm_out(latents)
+    output = torch.clamp(output, min=-1000, max=1000)  # Final safety
+    return output
