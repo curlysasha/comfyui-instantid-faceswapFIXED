@@ -1,4 +1,36 @@
-# ComfyUI InstantID FaceSwap v0.1.0
+# 🚀 ComfyUI InstantID FaceSwap v0.1.0 - Enhanced Edition
+
+<div align="center">
+
+![GitHub stars](https://img.shields.io/github/stars/nosiu/comfyui-instantId-faceswap?style=for-the-badge&logo=github&color=yellow)
+![GitHub forks](https://img.shields.io/github/forks/nosiu/comfyui-instantId-faceswap?style=for-the-badge&logo=github&color=blue)
+![License](https://img.shields.io/github/license/nosiu/comfyui-instantId-faceswap?style=for-the-badge&color=green)
+
+**🎭 Professional Face Swapping • 🛡️ Crash-Proof • ⚡ Production Ready**
+
+</div>
+
+---
+
+## ✨ **What Makes This Better?**
+
+### 🛡️ **Rock-Solid Stability**
+- **❌ NO MORE CRASHES** - Fixed critical `"No face detected"` errors that killed workflows
+- **🔄 Graceful Degradation** - Missing faces? No problem! Generates normal images instead
+- **⚡ Production Ready** - Handle mixed datasets with confidence
+
+### 🎯 **Enhanced User Experience** 
+- **📝 Clear Warnings** - Informative console messages instead of cryptic errors
+- **🔀 Smart Fallbacks** - Workflows continue even when face detection fails
+- **💪 Robust Processing** - Works with any image input reliably
+
+### 🙏 **Credits & Acknowledgments**
+> **Huge thanks to [nosiu](https://github.com/nosiu) for the incredible original [InstantID-faceswap](https://github.com/nosiu/InstantID-faceswap) implementation!** 
+> 
+> This enhanced version builds upon their excellent foundation with improved error handling and production stability.
+
+---
+
 <sub>[About](#comfyui-instantid-faceswap-v010) | [Installation guide](#installation-guide) | [Custom nodes](#custom-nodes) | [Workflows](#workflows) | [Tips](#tips) | [Changelog](#changelog)</sub>
 
 Implementation of [faceswap](https://github.com/nosiu/InstantID-faceswap/tree/main) based on [InstantID](https://github.com/InstantID/InstantID) for ComfyUI.
@@ -273,6 +305,13 @@ Since you can use the `Preprocess Image for InstantId` and `Preprocess Image for
 ## Changelog
 <sub>[About](#comfyui-instantid-faceswap-v010) | [Installation guide](#installation-guide) | [Custom nodes](#custom-nodes) | [Workflows](#workflows) | [Tips](#tips) | [Changelog](#changelog)</sub>
 
+- ### 🚀 **v0.1.0-Enhanced (02.07.2025)**
+   - **🛡️ CRITICAL FIX**: Eliminated workflow-breaking `"No face detected"` assertion errors
+   - **🔄 Graceful Degradation**: Missing faces now trigger smart fallbacks instead of crashes
+   - **⚡ Production Stability**: Handle mixed datasets with faces/non-faces seamlessly
+   - **📝 Better UX**: Clear warning messages replace cryptic error traces
+   - **🔧 Enhanced Nodes**: All face detection nodes now have robust error handling
+   - **💪 Zero Downtime**: Workflows continue and generate normal images when faces aren't detected
 
 - ### 0.1.0 (20.10.2024)
    - The code was rewritten from scratch and now uses the ComfyUI backend. This allows you to chain LORAs or ControlNets as needed, providing greater control over the entire process.
