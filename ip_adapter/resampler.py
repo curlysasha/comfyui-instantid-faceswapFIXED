@@ -48,13 +48,6 @@ class PerceiverAttention(nn.Module):
         latent (torch.Tensor): latent features
             shape (b, n2, D)
     """
-    # Store input dtype
-    input_dtype = x.dtype
-
-    # Cast to float32 for stable computation
-    x = x.float()
-    latents = latents.float()
-
     x = self.norm1(x)
     latents = self.norm2(latents)
 
@@ -71,15 +64,12 @@ class PerceiverAttention(nn.Module):
     # attention
     scale = 1 / math.sqrt(math.sqrt(self.dim_head))
     weight = (q * scale) @ (k * scale).transpose(-2, -1) # More stable with f16 than dividing afterwards
-    weight = torch.softmax(weight.float(), dim=-1)
+    weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
     out = weight @ v
 
     out = out.permute(0, 2, 1, 3).reshape(b, l, -1)
 
-    out = self.to_out(out)
-
-    # Cast back to input dtype
-    return out.to(input_dtype)
+    return self.to_out(out)
 
 
 class Resampler(nn.Module):
@@ -135,25 +125,13 @@ class Resampler(nn.Module):
       return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
     for i, (attn, ff) in enumerate(self.layers):
-        # Store original dtype
-        original_dtype = latents.dtype
-
-        # Cast to float32 for attention (stability)
-        latents_fp32 = latents.float()
-        x_fp32 = x.float()
-        attn_out = attn(x_fp32, latents_fp32)
-        latents = attn_out + latents_fp32  # Residual connection in fp32
-        latents = latents.to(original_dtype)  # Cast back
+        latents = attn(x, latents) + latents
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after attention layer {i}!")
           return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
-        # Cast to float32 for feedforward (stability)
-        latents_fp32 = latents.float()
-        ff_out = ff(latents_fp32)
-        latents = ff_out + latents_fp32  # Residual connection in fp32
-        latents = latents.to(original_dtype)  # Cast back
+        latents = ff(latents) + latents
 
         if torch.isnan(latents).any() or torch.isinf(latents).any():
           print(f"[Resampler ERROR] NaN/Inf after feedforward layer {i}!")
