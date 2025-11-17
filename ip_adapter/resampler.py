@@ -105,14 +105,19 @@ class Resampler(nn.Module):
       )
 
   def forward(self, x):
+    print(f"[Resampler] Input x: min={x.min().item():.2f}, max={x.max().item():.2f}, mean={x.mean().item():.2f}, has_nan={torch.isnan(x).any().item()}")
 
     latents = self.latents.to(x.device).repeat(x.size(0), 1, 1)
+    print(f"[Resampler] Latents: min={latents.min().item():.2f}, max={latents.max().item():.2f}, has_nan={torch.isnan(latents).any().item()}")
 
     x = self.proj_in(x)
+    print(f"[Resampler] After proj_in: min={x.min().item():.2f}, max={x.max().item():.2f}, has_nan={torch.isnan(x).any().item()}")
 
-    for attn, ff in self.layers:
+    for i, (attn, ff) in enumerate(self.layers):
         latents = attn(x, latents) + latents
+        print(f"[Resampler] Layer {i} after attn: min={latents.min().item():.2f}, max={latents.max().item():.2f}, has_nan={torch.isnan(latents).any().item()}")
         latents = ff(latents) + latents
+        print(f"[Resampler] Layer {i} after ff: min={latents.min().item():.2f}, max={latents.max().item():.2f}, has_nan={torch.isnan(latents).any().item()}")
 
     latents = self.proj_out(latents)
     print(f"[Resampler] After proj_out: min={latents.min().item():.2f}, max={latents.max().item():.2f}, mean={latents.mean().item():.2f}")
