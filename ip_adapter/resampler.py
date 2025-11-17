@@ -4,7 +4,7 @@ import math
 import torch
 import torch.nn as nn
 
-# FFN - returns nn.Sequential for compatibility with weight loading
+# FFN
 def FeedForward(dim, mult=4):
   inner_dim = int(dim * mult)
   return nn.Sequential(
@@ -105,65 +105,14 @@ class Resampler(nn.Module):
       )
 
   def forward(self, x):
-    print(f"[Resampler Debug] Input dtype: {x.dtype}, shape: {x.shape}, device: {x.device}")
 
-    # Check input for NaN/Inf
-    if torch.isnan(x).any() or torch.isinf(x).any():
-      print(f"[Resampler ERROR] Input already has NaN/Inf!")
-      print(f"  Input stats: min={x.min():.4f}, max={x.max():.4f}, mean={x.mean():.4f}")
-      return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
-
-    # Move latents to same device and dtype as input
-    latents = self.latents.to(x.device, dtype=x.dtype).repeat(x.size(0), 1, 1)
-    print(f"[Resampler] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, device={latents.device}, dtype={latents.dtype}, input dtype={x.dtype}")
+    latents = self.latents.repeat(x.size(0), 1, 1)
 
     x = self.proj_in(x)
-    print(f"[Resampler] After proj_in: has_nan={torch.isnan(x).any()}, min={x.min():.4f}, max={x.max():.4f}")
 
-    if torch.isnan(x).any() or torch.isinf(x).any():
-      print(f"[Resampler ERROR] NaN/Inf after proj_in!")
-      return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
-
-    for i, (attn, ff) in enumerate(self.layers):
+    for attn, ff in self.layers:
         latents = attn(x, latents) + latents
-        # Clamp to prevent overflow accumulation (reasonable range for embeddings)
-        latents = torch.clamp(latents, min=-100, max=100)
-
-        if torch.isnan(latents).any() or torch.isinf(latents).any():
-          print(f"[Resampler ERROR] NaN/Inf after attention layer {i}!")
-          return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
-
         latents = ff(latents) + latents
-        # Clamp to prevent overflow accumulation (reasonable range for embeddings)
-        latents = torch.clamp(latents, min=-100, max=100)
-
-        if torch.isnan(latents).any() or torch.isinf(latents).any():
-          print(f"[Resampler ERROR] NaN/Inf after feedforward layer {i}!")
-          return torch.zeros(x.size(0), 16, 2048, dtype=x.dtype, device=x.device)
 
     latents = self.proj_out(latents)
-    latents = torch.clamp(latents, min=-100, max=100)  # Critical: prevent overflow before final norm
-    print(f"[Resampler] After proj_out: has_nan={torch.isnan(latents).any()}, min={latents.min():.4f}, max={latents.max():.4f}")
-
-    output = self.norm_out(latents)
-    output = torch.clamp(output, min=-100, max=100)  # Final safety clamp
-
-    # Check for NaN/Inf before clamping
-    has_nan = torch.isnan(output).any()
-    has_inf = torch.isinf(output).any()
-    if has_nan or has_inf:
-      print(f"[Resampler WARNING] Pre-clamp NaN: {has_nan}, Inf: {has_inf}")
-      print(f"  Output stats: min={output.min():.4f}, max={output.max():.4f}, mean={output.mean():.4f}")
-      # Return zeros instead of NaN
-      print(f"[Resampler] Returning zero tensor to prevent NaN propagation")
-      return torch.zeros_like(output)
-
-    # Clamp output to prevent NaN/Inf propagation
-    output = torch.clamp(output, min=-65504, max=65504)
-
-    # Final check
-    if torch.isnan(output).any() or torch.isinf(output).any():
-      print(f"[Resampler ERROR] NaN/Inf still present after clamping!")
-      return torch.zeros_like(output)
-
-    return output
+    return self.norm_out(latents)

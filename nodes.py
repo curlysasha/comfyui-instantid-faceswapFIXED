@@ -51,20 +51,7 @@ class FaceEmbed:
       face_emb = torch.empty(0, 512, dtype=torch.float32)
     else:
       face_info = sorted(face_info, key=lambda x: (x["bbox"][2] - x["bbox"][0]) * (x["bbox"][3] - x["bbox"][1]))[-1] # only use the maximum face
-
-      # Get embedding from InsightFace
-      raw_embedding = face_info["embedding"]
-      print(f"[FaceEmbed Debug] Raw embedding from InsightFace: dtype={raw_embedding.dtype}, shape={raw_embedding.shape}")
-      print(f"  Stats: min={raw_embedding.min():.4f}, max={raw_embedding.max():.4f}, mean={raw_embedding.mean():.4f}")
-
-      # Check for NaN/Inf in raw embedding
-      if np.isnan(raw_embedding).any() or np.isinf(raw_embedding).any():
-        print(f"[FaceEmbed ERROR] InsightFace returned NaN/Inf embedding!")
-        print(f"  This indicates a problem with InsightFace or onnxruntime")
-        face_emb = torch.empty(0, 512, dtype=torch.float32)
-      else:
-        face_emb = torch.tensor(raw_embedding, dtype=torch.float32).unsqueeze(0)
-        print(f"[FaceEmbed] Converted to torch: min={face_emb.min():.4f}, max={face_emb.max():.4f}")
+      face_emb = torch.tensor(face_info["embedding"], dtype=torch.float32).unsqueeze(0)
 
     if face_embeds is None:
       return (face_emb,)
@@ -98,32 +85,13 @@ class FaceEmbedCombine:
     # Check if we have empty embeddings (no faces detected)
     if face_embeds.numel() == 0:
       print("Warning: No face embeddings to combine, using zero conditioning")
-      # Return zero conditioning tensor with correct shape for resampler output
       device = comfy.model_management.get_torch_device()
       conditionings = torch.zeros(1, 16, 2048, dtype=torch.float32, device=device)
       return (conditionings,)
 
-    print(f"[FaceEmbedCombine Debug] Input embeds dtype: {face_embeds.dtype}, shape: {face_embeds.shape}")
-
-    # Get target device and dtype from resampler
-    device = comfy.model_management.get_torch_device()
-    resampler = resampler.to(device)
-    resampler_dtype = next(resampler.parameters()).dtype
-
     embeds = torch.mean(face_embeds, dim=0, dtype=torch.float32).unsqueeze(0)
     embeds = embeds.reshape([1, -1, 512])
-
-    # Move embeds to same device and dtype as resampler
-    embeds = embeds.to(device=device, dtype=resampler_dtype)
-    print(f"[FaceEmbedCombine] Embeds device: {embeds.device}, dtype: {embeds.dtype}, Resampler dtype: {resampler_dtype}")
-
-    conditionings = resampler(embeds)
-
-    # Check resampler output
-    if torch.isnan(conditionings).any() or torch.isinf(conditionings).any():
-      print(f"[FaceEmbedCombine ERROR] NaN/Inf detected in conditionings!")
-      print(f"  Stats: min={conditionings.min():.4f}, max={conditionings.max():.4f}")
-
+    conditionings = resampler(embeds).to(comfy.model_management.get_torch_device())
     return (conditionings,)
 
 
@@ -248,10 +216,6 @@ class LoadInstantIdAdapter:
       ff_mult=4
     )
     resampler.load_state_dict(model["image_proj"])
-
-    # Keep resampler in float32 for numerical stability
-    # It was trained in float32 and doesn't work properly in float16
-
     return (instantId, resampler)
 
 
@@ -283,10 +247,7 @@ class InstantIdAdapterApply:
     has_face_conditioning = face_conditioning.sum().item() != 0
     if not has_face_conditioning:
       print("Warning: No face detected, skipping InstantID adapter")
-      return (model,)  # Return original model unchanged
-
-    print(f"[InstantIdAdapterApply Debug] Conditioning dtype: {face_conditioning.dtype}, shape: {face_conditioning.shape}")
-    print(f"  Strength: {strength}, has NaN: {torch.isnan(face_conditioning).any()}, has Inf: {torch.isinf(face_conditioning).any()}")
+      return (model,)
 
     instantId = instantId_adapter.to(comfy.model_management.get_torch_device())
     patch_kwargs = {
