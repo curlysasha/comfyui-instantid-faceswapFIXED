@@ -4,15 +4,26 @@ import math
 import torch
 import torch.nn as nn
 
-# FFN
+# FFN with float32 computation for stability
+class FeedForwardStable(nn.Module):
+  def __init__(self, dim, mult=4):
+    super().__init__()
+    inner_dim = int(dim * mult)
+    self.net = nn.Sequential(
+      nn.LayerNorm(dim),
+      nn.Linear(dim, inner_dim, bias=False),
+      nn.GELU(),
+      nn.Linear(inner_dim, dim, bias=False),
+    )
+
+  def forward(self, x):
+    input_dtype = x.dtype
+    x = x.float()
+    x = self.net(x)
+    return x.to(input_dtype)
+
 def FeedForward(dim, mult=4):
-  inner_dim = int(dim * mult)
-  return nn.Sequential(
-    nn.LayerNorm(dim),
-    nn.Linear(dim, inner_dim, bias=False),
-    nn.GELU(),
-    nn.Linear(inner_dim, dim, bias=False),
-  )
+  return FeedForwardStable(dim, mult)
 
 def reshape_tensor(x, heads):
   bs, length, _ = x.shape
@@ -48,6 +59,13 @@ class PerceiverAttention(nn.Module):
         latent (torch.Tensor): latent features
             shape (b, n2, D)
     """
+    # Store input dtype
+    input_dtype = x.dtype
+
+    # Cast to float32 for stable computation
+    x = x.float()
+    latents = latents.float()
+
     x = self.norm1(x)
     latents = self.norm2(latents)
 
@@ -64,12 +82,15 @@ class PerceiverAttention(nn.Module):
     # attention
     scale = 1 / math.sqrt(math.sqrt(self.dim_head))
     weight = (q * scale) @ (k * scale).transpose(-2, -1) # More stable with f16 than dividing afterwards
-    weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
+    weight = torch.softmax(weight.float(), dim=-1)
     out = weight @ v
 
     out = out.permute(0, 2, 1, 3).reshape(b, l, -1)
 
-    return self.to_out(out)
+    out = self.to_out(out)
+
+    # Cast back to input dtype
+    return out.to(input_dtype)
 
 
 class Resampler(nn.Module):
