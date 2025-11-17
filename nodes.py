@@ -89,15 +89,9 @@ class FaceEmbedCombine:
       conditionings = torch.zeros(1, 16, 2048, dtype=torch.float32, device=device)
       return (conditionings,)
 
-    # Move resampler to GPU
-    device = comfy.model_management.get_torch_device()
-    resampler = resampler.to(device)
-
     embeds = torch.mean(face_embeds, dim=0, dtype=torch.float32).unsqueeze(0)
     embeds = embeds.reshape([1, -1, 512])
-    embeds = embeds.to(device)  # Move embeds to same device
-
-    conditionings = resampler(embeds)
+    conditionings = resampler(embeds).to(comfy.model_management.get_torch_device())
     return (conditionings,)
 
 
