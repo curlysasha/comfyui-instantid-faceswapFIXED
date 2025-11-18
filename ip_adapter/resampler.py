@@ -22,23 +22,28 @@ def _sanitize_tensor(label, tensor):
   tensor = torch.clamp(tensor, min=-MAX_FP16_VALUE, max=MAX_FP16_VALUE)
   return tensor
 
-# FFN
-class FeedForward(nn.Module):
+# FFN stays Sequential for state_dict compatibility, but overrides forward for stability
+class FeedForward(nn.Sequential):
   def __init__(self, dim, mult=4):
-    super().__init__()
     inner_dim = int(dim * mult)
-    self.norm = nn.LayerNorm(dim)
-    self.linear1 = nn.Linear(dim, inner_dim, bias=False)
-    self.gelu = nn.GELU()
-    self.linear2 = nn.Linear(inner_dim, dim, bias=False)
+    modules = [
+      nn.LayerNorm(dim),
+      nn.Linear(dim, inner_dim, bias=False),
+      nn.GELU(),
+      nn.Linear(inner_dim, dim, bias=False),
+    ]
+    super().__init__(*modules)
 
   def forward(self, x):
-    x = self.norm(x)
-    x = self.linear1(x)
-    x = torch.clamp(x, min=-100, max=100)  # Prevent overflow after first linear
-    x = self.gelu(x)
-    x = self.linear2(x)
-    x = torch.clamp(x, min=-100, max=100)  # Prevent overflow after second linear
+    x = self[0](x)
+    x = _sanitize_tensor("FeedForward norm_out", x)
+    x = self[1](x)
+    x = torch.clamp(x, min=-100, max=100)
+    x = _sanitize_tensor("FeedForward linear1", x)
+    x = self[2](x)
+    x = self[3](x)
+    x = torch.clamp(x, min=-100, max=100)
+    x = _sanitize_tensor("FeedForward linear2", x)
     return x
 
 def reshape_tensor(x, heads):
@@ -123,11 +128,11 @@ class Resampler(nn.Module):
     self.layers = nn.ModuleList([])
     for _ in range(depth):
       self.layers.append(
-        nn.ModuleList(
-          [
-            PerceiverAttention(dim=dim, dim_head=dim_head, heads=heads),
-            FeedForward(dim=dim, mult=ff_mult),
-          ]
+        nn.ModuleDict(
+          {
+            "norm": PerceiverAttention(dim=dim, dim_head=dim_head, heads=heads),
+            "linear1": FeedForward(dim=dim, mult=ff_mult),
+          }
         )
       )
 
@@ -143,11 +148,11 @@ class Resampler(nn.Module):
     _log_tensor_stats("After proj_in", x)
     x = _sanitize_tensor("After proj_in", x)
 
-    for i, (attn, ff) in enumerate(self.layers):
-        latents = attn(x, latents) + latents
+    for i, layer in enumerate(self.layers):
+        latents = layer["norm"](x, latents) + latents
         _log_tensor_stats(f"Layer {i} after attn", latents)
         latents = _sanitize_tensor(f"Layer {i} after attn", latents)
-        latents = ff(latents) + latents
+        latents = layer["linear1"](latents) + latents
         _log_tensor_stats(f"Layer {i} after ff", latents)
         latents = _sanitize_tensor(f"Layer {i} after ff", latents)
 
