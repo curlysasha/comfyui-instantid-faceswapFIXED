@@ -1,18 +1,45 @@
 # modified from https://github.com/mlfoundations/open_flamingo/blob/main/open_flamingo/src/helpers.py
 import math
+import os
 
 import torch
 import torch.nn as nn
 
+MAX_FP16_VALUE = 65504.0  # Largest finite fp16 value, safe clamp target
+DEBUG_RESAMPLER = os.getenv("INSTANTID_DEBUG_RESAMPLER", "0") == "1"
+
+def _log_tensor_stats(label, tensor):
+  if not DEBUG_RESAMPLER:
+    return
+  print(f"[Resampler Debug] {label}: min={tensor.min().item():.2f}, max={tensor.max().item():.2f}, mean={tensor.mean().item():.2f}, has_nan={torch.isnan(tensor).any().item()}, has_inf={torch.isinf(tensor).any().item()}")
+
+def _sanitize_tensor(label, tensor):
+  has_nan = torch.isnan(tensor).any().item()
+  has_inf = torch.isinf(tensor).any().item()
+  if has_nan or has_inf:
+    print(f"[Resampler WARNING] {label}: NaN={has_nan}, Inf={has_inf}. Replacing with finite values.")
+    tensor = torch.nan_to_num(tensor, nan=0.0, posinf=MAX_FP16_VALUE, neginf=-MAX_FP16_VALUE)
+  tensor = torch.clamp(tensor, min=-MAX_FP16_VALUE, max=MAX_FP16_VALUE)
+  return tensor
+
 # FFN
-def FeedForward(dim, mult=4):
-  inner_dim = int(dim * mult)
-  return nn.Sequential(
-    nn.LayerNorm(dim),
-    nn.Linear(dim, inner_dim, bias=False),
-    nn.GELU(),
-    nn.Linear(inner_dim, dim, bias=False),
-  )
+class FeedForward(nn.Module):
+  def __init__(self, dim, mult=4):
+    super().__init__()
+    inner_dim = int(dim * mult)
+    self.norm = nn.LayerNorm(dim)
+    self.linear1 = nn.Linear(dim, inner_dim, bias=False)
+    self.gelu = nn.GELU()
+    self.linear2 = nn.Linear(inner_dim, dim, bias=False)
+
+  def forward(self, x):
+    x = self.norm(x)
+    x = self.linear1(x)
+    x = torch.clamp(x, min=-100, max=100)  # Prevent overflow after first linear
+    x = self.gelu(x)
+    x = self.linear2(x)
+    x = torch.clamp(x, min=-100, max=100)  # Prevent overflow after second linear
+    return x
 
 def reshape_tensor(x, heads):
   bs, length, _ = x.shape
@@ -105,22 +132,30 @@ class Resampler(nn.Module):
       )
 
   def forward(self, x):
-    print(f"[Resampler] Input x: min={x.min().item():.2f}, max={x.max().item():.2f}, mean={x.mean().item():.2f}, has_nan={torch.isnan(x).any().item()}")
+    _log_tensor_stats("Input", x)
+    x = _sanitize_tensor("Input", x)
 
     latents = self.latents.to(x.device).repeat(x.size(0), 1, 1)
-    print(f"[Resampler] Latents: min={latents.min().item():.2f}, max={latents.max().item():.2f}, has_nan={torch.isnan(latents).any().item()}")
+    _log_tensor_stats("Latents init", latents)
+    latents = _sanitize_tensor("Latents init", latents)
 
     x = self.proj_in(x)
-    print(f"[Resampler] After proj_in: min={x.min().item():.2f}, max={x.max().item():.2f}, has_nan={torch.isnan(x).any().item()}")
+    _log_tensor_stats("After proj_in", x)
+    x = _sanitize_tensor("After proj_in", x)
 
     for i, (attn, ff) in enumerate(self.layers):
         latents = attn(x, latents) + latents
-        print(f"[Resampler] Layer {i} after attn: min={latents.min().item():.2f}, max={latents.max().item():.2f}, has_nan={torch.isnan(latents).any().item()}")
+        _log_tensor_stats(f"Layer {i} after attn", latents)
+        latents = _sanitize_tensor(f"Layer {i} after attn", latents)
         latents = ff(latents) + latents
-        print(f"[Resampler] Layer {i} after ff: min={latents.min().item():.2f}, max={latents.max().item():.2f}, has_nan={torch.isnan(latents).any().item()}")
+        _log_tensor_stats(f"Layer {i} after ff", latents)
+        latents = _sanitize_tensor(f"Layer {i} after ff", latents)
 
     latents = self.proj_out(latents)
-    print(f"[Resampler] After proj_out: min={latents.min().item():.2f}, max={latents.max().item():.2f}, mean={latents.mean().item():.2f}")
+    _log_tensor_stats("After proj_out", latents)
+    latents = _sanitize_tensor("After proj_out", latents)
+
     output = self.norm_out(latents)
-    print(f"[Resampler] After norm_out: min={output.min().item():.2f}, max={output.max().item():.2f}, mean={output.mean().item():.2f}")
+    _log_tensor_stats("After norm_out", output)
+    output = _sanitize_tensor("After norm_out", output)
     return output

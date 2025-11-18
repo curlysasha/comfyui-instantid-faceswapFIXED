@@ -92,6 +92,9 @@ class FaceEmbedCombine:
     embeds = torch.mean(face_embeds, dim=0, dtype=torch.float32).unsqueeze(0)
     embeds = embeds.reshape([1, -1, 512])
     conditionings = resampler(embeds).to(comfy.model_management.get_torch_device())
+    if not torch.isfinite(conditionings).all():
+      print("[FaceEmbedCombine WARNING] NaN/Inf detected in conditioning. Replacing with zeros.")
+      conditionings = torch.nan_to_num(conditionings, nan=0.0, posinf=0.0, neginf=0.0)
     return (conditionings,)
 
 
@@ -247,6 +250,10 @@ class InstantIdAdapterApply:
 
   def apply_instantId_adapter(self, model, instantId_adapter, face_conditioning, strength):
     if strength == 0: return (model,)
+
+    if not torch.isfinite(face_conditioning).all():
+      print("[InstantID WARNING] Invalid face conditioning detected (NaN/Inf). Resetting to zeros.")
+      face_conditioning = torch.nan_to_num(face_conditioning, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Check if we have valid face conditioning (non-zero tensor)
     has_face_conditioning = face_conditioning.sum().item() != 0
