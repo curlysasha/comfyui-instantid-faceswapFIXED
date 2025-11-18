@@ -20,26 +20,22 @@ MAX_RESOLUTION = 16384
 
 
 def _upgrade_resampler_state_dict(state_dict):
-  needs_upgrade = any(".1.0." in key for key in state_dict.keys())
+  needs_upgrade = any(".norm." in key or ".linear1." in key or ".linear2." in key for key in state_dict.keys())
   if not needs_upgrade:
     return state_dict
-
-  replacements = {
-    ".1.0.": ".1.norm.",
-    ".1.1.": ".1.linear1.",
-    ".1.3.": ".1.linear2.",
-  }
 
   upgraded = state_dict.__class__()
   for key, value in state_dict.items():
     new_key = key
-    for old, new in replacements.items():
-      if old in key:
-        new_key = key.replace(old, new)
-        break
+    new_key = new_key.replace(".1.norm.", ".1.0.")
+    new_key = new_key.replace(".1.linear1.1.", ".1.1.")
+    new_key = new_key.replace(".1.linear1.3.", ".1.3.")
+    new_key = new_key.replace(".1.linear1.", ".1.1.")
+    new_key = new_key.replace(".1.linear2.3.", ".1.3.")
+    new_key = new_key.replace(".1.linear2.", ".1.3.")
     upgraded[new_key] = value
 
-  print("[LoadInstantIdAdapter] Upgraded resampler state dict to new format.")
+  print("[LoadInstantIdAdapter] Upgraded resampler state dict to legacy format.")
   return upgraded
 
 
