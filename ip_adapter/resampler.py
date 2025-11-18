@@ -128,11 +128,11 @@ class Resampler(nn.Module):
     self.layers = nn.ModuleList([])
     for _ in range(depth):
       self.layers.append(
-        nn.ModuleDict(
-          {
-            "norm": PerceiverAttention(dim=dim, dim_head=dim_head, heads=heads),
-            "linear1": FeedForward(dim=dim, mult=ff_mult),
-          }
+        nn.ModuleList(
+          [
+            PerceiverAttention(dim=dim, dim_head=dim_head, heads=heads),
+            FeedForward(dim=dim, mult=ff_mult),
+          ]
         )
       )
 
@@ -148,11 +148,11 @@ class Resampler(nn.Module):
     _log_tensor_stats("After proj_in", x)
     x = _sanitize_tensor("After proj_in", x)
 
-    for i, layer in enumerate(self.layers):
-        latents = layer["norm"](x, latents) + latents
+    for i, (attn, ff) in enumerate(self.layers):
+        latents = attn(x, latents) + latents
         _log_tensor_stats(f"Layer {i} after attn", latents)
         latents = _sanitize_tensor(f"Layer {i} after attn", latents)
-        latents = layer["linear1"](latents) + latents
+        latents = ff(latents) + latents
         _log_tensor_stats(f"Layer {i} after ff", latents)
         latents = _sanitize_tensor(f"Layer {i} after ff", latents)
 
