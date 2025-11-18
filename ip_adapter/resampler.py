@@ -22,26 +22,24 @@ def _sanitize_tensor(label, tensor):
   tensor = torch.clamp(tensor, min=-MAX_FP16_VALUE, max=MAX_FP16_VALUE)
   return tensor
 
-# FFN stays Sequential for state_dict compatibility, but overrides forward for stability
-class FeedForward(nn.Sequential):
+# FFN with explicit submodules so state_dict keys match upstream weights
+class FeedForward(nn.Module):
   def __init__(self, dim, mult=4):
+    super().__init__()
     inner_dim = int(dim * mult)
-    modules = [
-      nn.LayerNorm(dim),
-      nn.Linear(dim, inner_dim, bias=False),
-      nn.GELU(),
-      nn.Linear(inner_dim, dim, bias=False),
-    ]
-    super().__init__(*modules)
+    self.norm = nn.LayerNorm(dim)
+    self.linear1 = nn.Linear(dim, inner_dim, bias=False)
+    self.gelu = nn.GELU()
+    self.linear2 = nn.Linear(inner_dim, dim, bias=False)
 
   def forward(self, x):
-    x = self[0](x)
+    x = self.norm(x)
     x = _sanitize_tensor("FeedForward norm_out", x)
-    x = self[1](x)
+    x = self.linear1(x)
     x = torch.clamp(x, min=-100, max=100)
     x = _sanitize_tensor("FeedForward linear1", x)
-    x = self[2](x)
-    x = self[3](x)
+    x = self.gelu(x)
+    x = self.linear2(x)
     x = torch.clamp(x, min=-100, max=100)
     x = _sanitize_tensor("FeedForward linear2", x)
     return x
